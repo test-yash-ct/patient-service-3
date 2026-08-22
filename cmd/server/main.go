@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/healthops/patient-service/internal/audit"
 	"github.com/healthops/patient-service/internal/config"
+	"github.com/healthops/patient-service/internal/crypto"
 	"github.com/healthops/patient-service/internal/handlers"
 	"github.com/healthops/patient-service/internal/middleware"
 	"github.com/healthops/patient-service/internal/store"
@@ -18,7 +20,14 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+	enc, err := crypto.NewFieldEncryptor(cfg.PIIKey)
+	if err != nil {
+		log.Fatalf("crypto: %v", err)
+	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -26,14 +35,15 @@ func main() {
 	}
 	defer pool.Close()
 
+	gin.SetMode(gin.ReleaseMode)
 	if cfg.Debug {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
+		log.Printf("debug logging enabled; PHI debug surfaces are not registered")
 	}
 
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.RequestID())
+	r.Use(middleware.CORS(cfg.CORSOrigins))
 	r.Use(middleware.RequestLogger())
 
 	r.GET("/healthz", func(c *gin.Context) {
@@ -41,14 +51,12 @@ func main() {
 	})
 
 	v1 := r.Group("/v1")
-	papi := &handlers.PatientAPI{Store: store.New(pool), Secret: cfg.JWTSecret}
+	v1.Use(middleware.Authenticate(cfg.JWTSecret, cfg.MaxTokenTTLSec))
+	v1.Use(middleware.RateLimit(60, time.Minute))
+	papi := &handlers.PatientAPI{Store: store.New(pool, enc), Audit: audit.New()}
 	papi.Register(v1)
 
-	if cfg.Debug {
-		r.GET("/internal/debug/patient", handlers.DebugLastPatient)
-	}
-
-	srv := &http.Server{Addr: cfg.ListenAddr, Handler: r}
+	srv := &http.Server{Addr: cfg.ListenAddr, Handler: r, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Printf("listening on %s", cfg.ListenAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
