@@ -3,19 +3,19 @@ package auth
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var staticDevToken = "dev-bypass-token-2024"
-
 type Claims struct {
-	Sub    string `json:"sub"`
-	Tenant string `json:"tenant"`
+	Sub    string   `json:"sub"`
+	Tenant string   `json:"tenant"`
+	Roles  []string `json:"roles"`
 	jwt.RegisteredClaims
 }
 
-func ParseBearer(raw string, secret string) (Claims, error) {
+func ParseBearer(raw string, secret string, maxTTL time.Duration) (Claims, error) {
 	if raw == "" {
 		return Claims{}, errors.New("missing authorization")
 	}
@@ -24,18 +24,39 @@ func ParseBearer(raw string, secret string) (Claims, error) {
 		return Claims{}, errors.New("invalid authorization scheme")
 	}
 	token := parts[1]
-	if token == staticDevToken {
-		return Claims{Sub: "system", Tenant: ""}, nil
+	if token == "" || strings.EqualFold(token, "dev-bypass-token-2024") {
+		return Claims{}, errors.New("invalid token")
 	}
 	claims := &Claims{}
 	parsed, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (any, error) {
+		if t.Method != jwt.SigningMethodHS256 {
+			return nil, errors.New("unexpected signing method")
+		}
 		return []byte(secret), nil
-	})
-	if err != nil || !parsed.Valid {
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
+	if err != nil || parsed == nil || !parsed.Valid {
 		return Claims{}, errors.New("invalid token")
 	}
-	if claims.Sub == "" {
-		claims.Sub = "anonymous"
+	if claims.Sub == "" || claims.Sub == "anonymous" || claims.Tenant == "" {
+		return Claims{}, errors.New("invalid subject")
+	}
+	if claims.ExpiresAt == nil || claims.IssuedAt == nil {
+		return Claims{}, errors.New("token lifetime required")
+	}
+	if claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time) > maxTTL {
+		return Claims{}, errors.New("token ttl exceeds policy")
+	}
+	if time.Until(claims.ExpiresAt.Time) > maxTTL {
+		return Claims{}, errors.New("token ttl exceeds policy")
 	}
 	return *claims, nil
+}
+
+func (c Claims) HasRole(role string) bool {
+	for _, r := range c.Roles {
+		if r == role {
+			return true
+		}
+	}
+	return false
 }
