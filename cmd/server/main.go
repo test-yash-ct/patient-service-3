@@ -13,10 +13,10 @@ import (
 	"github.com/healthops/patient-service/internal/audit"
 	"github.com/healthops/patient-service/internal/config"
 	"github.com/healthops/patient-service/internal/crypto"
+	"github.com/healthops/patient-service/internal/dbpool"
 	"github.com/healthops/patient-service/internal/handlers"
 	"github.com/healthops/patient-service/internal/middleware"
 	"github.com/healthops/patient-service/internal/store"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -29,7 +29,7 @@ func main() {
 		log.Fatalf("crypto: %v", err)
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	pool, err := dbpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("db: %v", err)
 	}
@@ -49,6 +49,13 @@ func main() {
 	r.GET("/healthz", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
+	r.GET("/readyz", func(c *gin.Context) {
+		if err := pool.Ping(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "db_unavailable"})
+			return
+		}
+		c.String(http.StatusOK, "ok")
+	})
 
 	v1 := r.Group("/v1")
 	v1.Use(middleware.Authenticate(cfg.JWTSecret, cfg.MaxTokenTTLSec))
@@ -56,7 +63,15 @@ func main() {
 	papi := &handlers.PatientAPI{Store: store.New(pool, enc), Audit: audit.New()}
 	papi.Register(v1)
 
-	srv := &http.Server{Addr: cfg.ListenAddr, Handler: r, ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{
+		Addr:              cfg.ListenAddr,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
 	go func() {
 		log.Printf("listening on %s", cfg.ListenAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

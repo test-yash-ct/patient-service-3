@@ -5,8 +5,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/healthops/patient-service/internal/audit"
+	"github.com/healthops/patient-service/internal/auth"
 	"github.com/healthops/patient-service/internal/crypto"
 	"github.com/healthops/patient-service/internal/middleware"
+	"github.com/healthops/patient-service/internal/models"
 	"github.com/healthops/patient-service/internal/store"
 )
 
@@ -35,17 +37,46 @@ func (a *PatientAPI) Get(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_id"})
 		return
 	}
+	if !a.canAccessPatient(c, claims, id) {
+		a.emit(c, claims.Sub, claims.Tenant, id, "forbidden")
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
 	p, err := a.Store.GetByID(c.Request.Context(), claims.Tenant, id)
 	if err != nil {
 		a.emit(c, claims.Sub, claims.Tenant, id, "not_found")
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}
-	if !claims.HasRole("patient:phi-breakglass") {
-		p.SSN = crypto.MaskSSN(p.SSN)
-	}
+	resp := a.redactPatient(p, claims)
 	a.emit(c, claims.Sub, claims.Tenant, id, "ok")
-	c.JSON(http.StatusOK, p)
+	c.JSON(http.StatusOK, resp)
+}
+
+func (a *PatientAPI) canAccessPatient(c *gin.Context, claims auth.Claims, patientID string) bool {
+	if claims.Sub == patientID {
+		return true
+	}
+	if claims.HasRole("patient:phi-breakglass") {
+		return true
+	}
+	if claims.HasRole("patient:care-team") {
+		ok, err := a.Store.IsCareTeamMember(c.Request.Context(), claims.Tenant, claims.Sub, patientID)
+		return err == nil && ok
+	}
+	return false
+}
+
+func (a *PatientAPI) redactPatient(p models.Patient, claims auth.Claims) models.Patient {
+	if claims.HasRole("patient:phi-breakglass") {
+		return p
+	}
+	p.SSN = crypto.MaskSSN(p.SSN)
+	p.FullName = crypto.MaskName(p.FullName)
+	p.Email = crypto.MaskEmail(p.Email)
+	p.Phone = crypto.MaskPhone(p.Phone)
+	p.MedicalNotes = ""
+	return p
 }
 
 func (a *PatientAPI) emit(c *gin.Context, actor, tenant, object, outcome string) {

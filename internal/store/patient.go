@@ -42,5 +42,21 @@ func (s *PatientStore) GetByID(ctx context.Context, tenantID, id string) (models
 	if p.MedicalNotes, err = s.enc.Decrypt(p.MedicalNotes); err != nil {
 		return models.Patient{}, err
 	}
+	if p.FullName, err = s.enc.Decrypt(p.FullName); err != nil {
+		return models.Patient{}, err
+	}
 	return p, nil
+}
+
+func (s *PatientStore) IsCareTeamMember(ctx context.Context, tenantID, providerID, patientID string) (bool, error) {
+	const q = `SELECT 1 FROM care_team_assignments WHERE tenant_id = $1 AND provider_id = $2 AND patient_id = $3`
+	var one int
+	err := s.pool.QueryRow(ctx, q, tenantID, providerID, patientID).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }

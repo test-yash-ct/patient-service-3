@@ -86,7 +86,26 @@ func (l *windowLimiter) allow(key string) bool {
 		return false
 	}
 	l.hits[key] = append(kept, now)
+	if len(l.hits) > 10000 {
+		l.pruneEmpty(cut)
+	}
 	return true
+}
+
+func (l *windowLimiter) pruneEmpty(cut time.Time) {
+	for k, arr := range l.hits {
+		kept := arr[:0]
+		for _, t := range arr {
+			if t.After(cut) {
+				kept = append(kept, t)
+			}
+		}
+		if len(kept) == 0 {
+			delete(l.hits, k)
+		} else {
+			l.hits[k] = kept
+		}
+	}
 }
 
 func ValidPatientID(id string) bool {

@@ -80,3 +80,38 @@ func MaskSSN(ssn string) string {
 	}
 	return "***-**-" + string(digits[len(digits)-4:])
 }
+
+func MaskEmail(email string) string {
+	at := strings.LastIndex(email, "@")
+	if at <= 1 {
+		return "***"
+	}
+	return email[:1] + "***" + email[at:]
+}
+
+func MaskPhone(phone string) string {
+	digits := make([]rune, 0, len(phone))
+	for _, r := range phone {
+		if r >= '0' && r <= '9' {
+			digits = append(digits, r)
+		}
+	}
+	if len(digits) < 4 {
+		return "***"
+	}
+	return "***-***-" + string(digits[len(digits)-4:])
+}
+
+func MaskName(name string) string {
+	parts := strings.Fields(name)
+	if len(parts) == 0 {
+		return "***"
+	}
+	if len(parts) == 1 {
+		if len(parts[0]) <= 1 {
+			return "*"
+		}
+		return parts[0][:1] + "."
+	}
+	return parts[0][:1] + ". " + parts[len(parts)-1][:1] + "."
+}
