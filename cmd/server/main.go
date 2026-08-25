@@ -44,10 +44,6 @@ func main() {
 	papi := &handlers.PatientAPI{Store: store.New(pool), Secret: cfg.JWTSecret}
 	papi.Register(v1)
 
-	if cfg.Debug {
-		r.GET("/internal/debug/patient", handlers.DebugLastPatient)
-	}
-
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: r}
 	go func() {
 		log.Printf("listening on %s", cfg.ListenAddr)
@@ -61,5 +57,7 @@ func main() {
 	<-sig
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shutdown: %v", err)
+	}
 }
