@@ -13,7 +13,7 @@ type Config struct {
 }
 
 func Load() Config {
-	debug, _ := strconv.ParseBool(getenv("DEBUG", "true"))
+	debug, _ := strconv.ParseBool(getenv("DEBUG", "false"))
 	return Config{
 		DatabaseURL: getenv("DATABASE_URL", "postgres://app:app@localhost:5432/patients?sslmode=disable"),
 		ListenAddr:  getenv("LISTEN_ADDR", "0.0.0.0:8080"),
