@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/healthops/patient-service/internal/config"
 	"github.com/healthops/patient-service/internal/handlers"
-	"github.com/healthops/patient-service/internal/middleware"
+	"github.com/healthops/patient-service/internal/obs"
 	"github.com/healthops/patient-service/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -34,11 +34,13 @@ func main() {
 
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(middleware.RequestLogger())
+	r.Use(obs.RequestID())
+	r.Use(obs.AccessLogger())
 
 	r.GET("/healthz", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
+	r.GET("/meta", obs.MetaHandler(cfg.Metadata))
 
 	v1 := r.Group("/v1")
 	papi := &handlers.PatientAPI{Store: store.New(pool), Secret: cfg.JWTSecret}

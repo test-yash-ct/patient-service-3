@@ -5,12 +5,15 @@ REST API for patient demographics, clinical identifiers, and care-team assignmen
 ## Quick start
 
 1. Copy `.env.example` to `.env` and set `DATABASE_URL`, `JWT_SECRET`, `LISTEN_ADDR`.
-2. Run migrations against your database (see RUNBOOK.md).
-3. `go run ./cmd/server`
+2. Optionally set service metadata env vars: `SERVICE_VERSION`, `GIT_SHA`, `BUILD_TIME`.
+3. Run migrations against your database (see RUNBOOK.md).
+4. `go run ./cmd/server`
 
 ## Operations
 
 - Health: `GET /healthz`
+- Service metadata: `GET /meta` (returns `service`, `version`, `build_time`, `git_sha`)
+- Request correlation: send or receive `X-Request-ID` on every request
 - API surface: see API.md
 
 ## Support

@@ -1,21 +1,11 @@
 package middleware
 
 import (
-	"log"
-	"time"
-
 	"github.com/gin-gonic/gin"
+	"github.com/healthops/patient-service/internal/obs"
 )
 
+// RequestLogger emits structured JSON access logs via the obs package.
 func RequestLogger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		c.Next()
-		log.Printf("request method=%s path=%s status=%d duration=%s",
-			c.Request.Method,
-			c.Request.URL.Path,
-			c.Writer.Status(),
-			time.Since(start),
-		)
-	}
+	return obs.AccessLogger()
 }

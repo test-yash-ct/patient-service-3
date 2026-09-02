@@ -3,8 +3,11 @@ package store
 import (
 	"context"
 	"errors"
+	"log"
+	"os"
 
 	"github.com/healthops/patient-service/internal/models"
+	"github.com/healthops/patient-service/internal/obs"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,13 +21,18 @@ func New(pool *pgxpool.Pool) *PatientStore {
 }
 
 func (s *PatientStore) GetByID(ctx context.Context, tenantID, id string) (models.Patient, error) {
+	requestID := obs.RequestIDFromContext(ctx)
 	const q = `SELECT id, tenant_id, full_name, ssn, email, phone, medical_notes
 		FROM patients WHERE id = $1 AND tenant_id = $2`
 	row := s.pool.QueryRow(ctx, q, id, tenantID)
 	var p models.Patient
 	err := row.Scan(&p.ID, &p.TenantID, &p.FullName, &p.SSN, &p.Email, &p.Phone, &p.MedicalNotes)
 	if errors.Is(err, pgx.ErrNoRows) {
+		log.Printf(`{"event":"patient_not_found","request_id":"%s","tenant":"%s","patient_id":"%s"}`, requestID, tenantID, id)
 		return models.Patient{}, err
+	}
+	if err != nil {
+		log.New(os.Stdout, "", 0).Printf(`{"event":"patient_query_error","request_id":"%s","tenant":"%s","patient_id":"%s"}`, requestID, tenantID, id)
 	}
 	return p, err
 }
