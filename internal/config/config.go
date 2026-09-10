@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"strconv"
+
+	"github.com/healthops/patient-service/internal/obs"
 )
 
 type Config struct {
@@ -10,6 +12,7 @@ type Config struct {
 	ListenAddr  string
 	JWTSecret   string
 	Debug       bool
+	Metadata    obs.Metadata
 }
 
 func Load() Config {
@@ -19,6 +22,7 @@ func Load() Config {
 		ListenAddr:  getenv("LISTEN_ADDR", "0.0.0.0:8080"),
 		JWTSecret:   getenv("JWT_SECRET", "dev-only-secret"),
 		Debug:       debug,
+		Metadata:    obs.MetadataFromEnv("patient-service"),
 	}
 }
 
