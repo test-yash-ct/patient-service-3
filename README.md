@@ -2,6 +2,8 @@
 
 REST API for patient demographics, clinical identifiers, and care-team assignments. Backed by PostgreSQL.
 
+HTTP handlers call `internal/service` (get/list/update use cases). The service owns tenant scoping and business logging; `internal/store` is persistence only. Public routes are unchanged.
+
 ## Quick start
 
 1. Copy `.env.example` to `.env` and set `DATABASE_URL`, `JWT_SECRET`, `LISTEN_ADDR`.
