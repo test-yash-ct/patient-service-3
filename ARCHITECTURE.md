@@ -14,6 +14,7 @@ The patient service exposes a Gin HTTP server that authenticates requests and de
 - **internal/obs** — request ID middleware, structured JSON access logs, `/meta` handler.
 - **internal/middleware** — thin re-export of obs access logging for legacy imports.
 - **internal/config** — environment-driven configuration with conservative production defaults documented in RUNBOOK.md.
+- **internal/events** — typed integration-event envelope and in-process outbox.
 
 ## Data flow
 
@@ -25,6 +26,18 @@ Clients send `Authorization: Bearer <token>` and `X-Tenant-ID`. The obs middlewa
 4. Handler maps typed service errors to HTTP status codes and returns JSON.
 
 This layering is in-process. It is not a new microservice.
+
+## Integration events
+
+Write-side use cases append a typed domain event to an in-process outbox after the store mutation succeeds. The envelope is:
+
+```json
+{"event_id":"uuid","event_type":"...","tenant_id":"...","occurred_at":"RFC3339","request_id":"...","payload":{}}
+```
+
+`patient.updated` is emitted from `Patients.Update` with `patient_id` only in the payload (no PHI). Other services should consume these events rather than scraping HTTP APIs for side effects.
+
+Transport today is the in-process `Outbox` (`Memory` in this process). A durable dispatcher (poll + publish) can be added later without changing producers. Append after commit is a dual-write; append errors are logged and do not rewrite already-persisted rows.
 
 ## Observability
 

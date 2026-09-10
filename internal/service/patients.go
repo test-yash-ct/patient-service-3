@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/healthops/patient-service/internal/events"
 	"github.com/healthops/patient-service/internal/models"
 	"github.com/healthops/patient-service/internal/obs"
 	"github.com/jackc/pgx/v5"
@@ -19,11 +20,19 @@ type PatientRepository interface {
 }
 
 type Patients struct {
-	repo PatientRepository
+	repo   PatientRepository
+	outbox events.Outbox
 }
 
 func NewPatients(repo PatientRepository) *Patients {
-	return &Patients{repo: repo}
+	return NewPatientsWithOutbox(repo, events.Nop{})
+}
+
+func NewPatientsWithOutbox(repo PatientRepository, outbox events.Outbox) *Patients {
+	if outbox == nil {
+		outbox = events.Nop{}
+	}
+	return &Patients{repo: repo, outbox: outbox}
 }
 
 func ResolveTenant(claimTenant, headerTenant string) (string, error) {
@@ -98,7 +107,14 @@ func (s *Patients) Update(ctx context.Context, claimTenant, headerTenant, id, su
 		}
 		return err
 	}
-	logPatientEvent(obs.RequestIDFromContext(ctx), tenantID, id, subject, "patient_update")
+	requestID := obs.RequestIDFromContext(ctx)
+	logPatientEvent(requestID, tenantID, id, subject, "patient_update")
+	ev := events.New(events.TypePatientUpdated, tenantID, requestID, map[string]any{
+		"patient_id": id,
+	})
+	if err := s.outbox.Append(ctx, ev); err != nil {
+		log.Printf("outbox append failed request_id=%s event_type=%s", requestID, ev.EventType)
+	}
 	return nil
 }
 

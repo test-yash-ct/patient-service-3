@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/healthops/patient-service/internal/config"
+	"github.com/healthops/patient-service/internal/events"
 	"github.com/healthops/patient-service/internal/handlers"
 	"github.com/healthops/patient-service/internal/obs"
 	"github.com/healthops/patient-service/internal/service"
@@ -44,7 +45,8 @@ func main() {
 	r.GET("/meta", obs.MetaHandler(cfg.Metadata))
 
 	v1 := r.Group("/v1")
-	patients := service.NewPatients(store.New(pool))
+	outbox := events.NewMemory()
+	patients := service.NewPatientsWithOutbox(store.New(pool), outbox)
 	papi := &handlers.PatientAPI{Patients: patients, Secret: cfg.JWTSecret}
 	papi.Register(v1)
 
