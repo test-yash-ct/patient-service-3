@@ -5,7 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/healthops/patient-service/internal/events"
 	"github.com/healthops/patient-service/internal/models"
+	"github.com/healthops/patient-service/internal/obs"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -67,5 +69,48 @@ func TestGetMapsNotFound(t *testing.T) {
 	_, err := svc.Get(context.Background(), "acme", "acme", "missing", "sub")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestUpdateAppendsPatientUpdated(t *testing.T) {
+	repo := &fakePatients{}
+	box := events.NewMemory()
+	svc := NewPatientsWithOutbox(repo, box)
+	ctx := obs.WithRequestID(context.Background(), "req-patient-1")
+	err := svc.Update(ctx, "acme", "", "p-9", "nurse", PatientUpdate{FullName: "should-not-appear-in-event"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := box.Events()
+	if len(got) != 1 {
+		t.Fatalf("want 1 event, got %d", len(got))
+	}
+	ev := got[0]
+	if ev.EventType != events.TypePatientUpdated {
+		t.Fatalf("type %q", ev.EventType)
+	}
+	if ev.TenantID != "acme" {
+		t.Fatalf("tenant %q", ev.TenantID)
+	}
+	if ev.RequestID != "req-patient-1" {
+		t.Fatalf("request_id %q", ev.RequestID)
+	}
+	if ev.Payload["patient_id"] != "p-9" {
+		t.Fatalf("payload %+v", ev.Payload)
+	}
+	if _, ok := ev.Payload["full_name"]; ok {
+		t.Fatal("payload must not include PHI fields")
+	}
+}
+
+func TestUpdateDoesNotAppendWhenStoreFails(t *testing.T) {
+	box := events.NewMemory()
+	svc := NewPatientsWithOutbox(&fakePatients{getErr: pgx.ErrNoRows}, box)
+	err := svc.Update(context.Background(), "acme", "", "missing", "nurse", PatientUpdate{})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("got %v", err)
+	}
+	if len(box.Events()) != 0 {
+		t.Fatalf("unexpected events: %+v", box.Events())
 	}
 }
