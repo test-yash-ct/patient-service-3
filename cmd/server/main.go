@@ -13,6 +13,7 @@ import (
 	"github.com/healthops/patient-service/internal/config"
 	"github.com/healthops/patient-service/internal/handlers"
 	"github.com/healthops/patient-service/internal/obs"
+	"github.com/healthops/patient-service/internal/service"
 	"github.com/healthops/patient-service/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -43,7 +44,8 @@ func main() {
 	r.GET("/meta", obs.MetaHandler(cfg.Metadata))
 
 	v1 := r.Group("/v1")
-	papi := &handlers.PatientAPI{Store: store.New(pool), Secret: cfg.JWTSecret}
+	patients := service.NewPatients(store.New(pool))
+	papi := &handlers.PatientAPI{Patients: patients, Secret: cfg.JWTSecret}
 	papi.Register(v1)
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: r}

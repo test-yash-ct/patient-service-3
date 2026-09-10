@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/healthops/patient-service/internal/handlers"
 	"github.com/healthops/patient-service/internal/obs"
-	"github.com/healthops/patient-service/internal/store"
+	"github.com/healthops/patient-service/internal/service"
 )
 
 func setupRouter() *gin.Engine {
@@ -83,7 +83,7 @@ func TestRequestIDGeneratedWhenMissing(t *testing.T) {
 
 func TestPatientHandlerRequiresAuth(t *testing.T) {
 	r := setupRouter()
-	api := &handlers.PatientAPI{Store: (*store.PatientStore)(nil), Secret: "x"}
+	api := &handlers.PatientAPI{Patients: service.NewPatients(nil), Secret: "x"}
 	g := r.Group("/v1")
 	api.Register(g)
 	req := httptest.NewRequest(http.MethodGet, "/v1/patients/p-1", nil)

@@ -1,20 +1,18 @@
 package handlers
 
 import (
-	"encoding/json"
-	"log"
+	"errors"
 	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/healthops/patient-service/internal/auth"
 	"github.com/healthops/patient-service/internal/obs"
-	"github.com/healthops/patient-service/internal/store"
+	"github.com/healthops/patient-service/internal/service"
 )
 
 type PatientAPI struct {
-	Store  *store.PatientStore
-	Secret string
+	Patients *service.Patients
+	Secret   string
 }
 
 func (a *PatientAPI) Register(r *gin.RouterGroup) {
@@ -22,50 +20,31 @@ func (a *PatientAPI) Register(r *gin.RouterGroup) {
 }
 
 func (a *PatientAPI) Get(c *gin.Context) {
-	ctx := c.Request.Context()
-	requestID := obs.RequestIDFromContext(ctx)
-
-	claims, err := auth.ParseBearer(ctx, c.GetHeader("Authorization"), a.Secret)
+	claims, err := auth.ParseBearer(c.Request.Context(), c.GetHeader("Authorization"), a.Secret)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	tenantID := claims.Tenant
-	if headerTenant := c.GetHeader(obs.HeaderTenantID); headerTenant != "" {
-		if tenantID != "" && headerTenant != tenantID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "tenant_mismatch"})
-			return
-		}
-		if tenantID == "" {
-			tenantID = headerTenant
-		}
-	}
-	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_tenant"})
-		return
-	}
-	ctx = obs.WithTenant(ctx, tenantID)
-	c.Request = c.Request.WithContext(ctx)
-
-	id := c.Param("id")
-	p, err := a.Store.GetByID(ctx, tenantID, id)
+	p, err := a.Patients.Get(c.Request.Context(), claims.Tenant, c.GetHeader(obs.HeaderTenantID), c.Param("id"), claims.Sub)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		writeServiceError(c, err)
 		return
 	}
-	logPatientAccess(requestID, tenantID, id, claims.Sub)
 	c.JSON(http.StatusOK, p)
 }
 
-func logPatientAccess(requestID, tenant, patientID, subject string) {
-	entry := map[string]string{
-		"event":      "patient_access",
-		"request_id": requestID,
-		"tenant":     tenant,
-		"patient_id": patientID,
-		"subject":    subject,
+func writeServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrForbidden):
+		c.JSON(http.StatusForbidden, gin.H{"error": "tenant_mismatch"})
+	case errors.Is(err, service.ErrMissingTenant):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_tenant"})
+	case errors.Is(err, service.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+	case errors.Is(err, service.ErrInvalidInput):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_input"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
 	}
-	b, _ := json.Marshal(entry)
-	log.New(os.Stdout, "", 0).Println(string(b))
 }
